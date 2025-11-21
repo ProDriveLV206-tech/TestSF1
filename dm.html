@@ -1,0 +1,57 @@
+<!doctype html><html><head><meta charset='utf-8'><title>DMs</title><link rel='stylesheet' href='css/style.css'></head><body>
+<div class="main-content">
+  <div class="header"><h2>Direct Messages</h2></div>
+  <div class="card" style="display:flex;gap:12px">
+    <div style="width:260px">
+      <input id="dmEmail" placeholder="Open DM by email"><button id="openDmBtn">Open</button>
+      <div id="dmList"></div>
+    </div>
+    <div style="flex:1">
+      <div id="dmWindow" class="chat-window"></div>
+      <div class="input-row"><input id="dmInput" placeholder="Message..."><button id="dmSend">Send</button></div>
+    </div>
+  </div>
+</div>
+<script src="js/client_helpers.js"></script>
+<script>
+requireAuth().then(user=>{
+  if(!user) return;
+  const meKey = user.email.replace(/\./g,'_');
+  // load recent DM threads from 'dms_meta' or 'dms'
+  firebase.database().ref('dms_meta').orderByChild(meKey).on('value', snap=>{ /* placeholder, show manual open */ });
+  document.getElementById('openDmBtn').onclick = ()=>{
+    const target = document.getElementById('dmEmail').value.trim().toLowerCase();
+    if(!target) return alert('enter email');
+    const a = meKey, b = target.replace(/\./g,'_');
+    const room = a < b ? a+'__'+b : b+'__'+a;
+    openDM(room, target);
+  };
+});
+
+var currentDM = null;
+function openDM(room, targetEmail){
+  currentDM = room;
+  document.getElementById('dmWindow').innerHTML = '';
+  const ref = firebase.database().ref('dms/'+room);
+  ref.off();
+  ref.limitToLast(200).on('child_added', snap=>{
+    const m = snap.val();
+    const div=document.createElement('div'); div.className='message';
+    const av=document.createElement('div'); av.className='avatar'; const img=document.createElement('img'); img.src=m.pfp||'https://via.placeholder.com/40'; img.style.width='40px'; img.style.height='40px'; av.appendChild(img);
+    const bubble=document.createElement('div'); bubble.innerHTML = '<div class="meta">'+m.from+' • '+new Date(m.ts).toLocaleTimeString()+'</div><div>'+m.text+'</div>';
+    div.appendChild(av); div.appendChild(bubble); document.getElementById('dmWindow').appendChild(div);
+  });
+}
+document.getElementById('dmSend') && document.getElementById('dmSend').addEventListener('click', function(){
+  const user = firebase.auth().currentUser; if(!user) return alert('Login');
+  const txt = document.getElementById('dmInput').value.trim(); if(!txt) return;
+  if(!currentDM) return alert('Open a DM first');
+  firebase.database().ref('dms/'+currentDM).push({ from: user.email, text: txt, ts: Date.now() });
+  // notify inbox for receiver(s)
+  const parts = currentDM.split('__');
+  parts.forEach(p=>{ if(p !== user.email.replace(/\./g,'_')) firebase.database().ref('inbox/'+p).push({ from: user.email, text: txt, ts: Date.now() }); });
+  document.getElementById('dmInput').value='';
+});
+</script>
+
+</body></html>
